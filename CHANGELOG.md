@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.6 — Current-session PS5 title classification
+
+- A PSN/media-player title no longer makes the independent Title Classifier enum
+  valid. Only a present Classifier raw title may select `gaming_default`,
+  `gaming_grind`, or `gaming_headset`.
+- A new PS5 session without a resolved Classifier title keeps the existing R6
+  `gaming_grind` fallback, so running HomePod music is not paused merely because
+  the console or its menu became active.
+- `Browsing the menu` is an explicit no-title sentinel. Valid title changes in
+  the same session still reclassify immediately; `Diablo IV` with enum `1`
+  remains `gaming_grind`.
+- Tracking: `Levtos/benni_media_state#29`.
+
 ## 0.14.3 — Canonical Core-Devices activity attributes
 
 - PC, PS5, Switch and Denon bindings now prefer a boolean Core-Devices

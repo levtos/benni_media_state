@@ -310,10 +310,54 @@ def test_r6_title_drop_during_session_is_sticky():
     assert d.headset_active is True
 
 
-def test_ps5_psn_title_fallback_used_when_raw_missing():
-    # Kein ETM-Raw gebunden → PSN-Now-Playing als Titel-Fallback.
+def test_ps5_player_title_does_not_replace_classifier_raw():
+    # Ein PSN-/Player-Titel ist keine belastbare Classifier-Auflösung. Solange
+    # ETM-Raw fehlt, bleibt die musikverträgliche Pending-Semantik aktiv.
     d = L.decide(_inp(ps5_on=True, ps5_title="Returnal", ps5_enum=0))
-    assert d.subcontext == C.SUB_GAME_DEFAULT  # Titel da → enum-basiert, kein R6
+    assert d.subcontext == C.SUB_GAME_GRIND
+
+
+def test_ps5_menu_title_does_not_apply_default_enum_or_stop_music():
+    d = L.decide(
+        _inp(
+            ps5_on=True,
+            ps5_title="Browsing the menu",
+            ps5_raw="idle",
+            ps5_enum=0,
+            homepods_playing=True,
+        )
+    )
+    assert d.subcontext == C.SUB_GAME_GRIND
+
+
+def test_diablo_iv_classifier_one_keeps_grind_semantics():
+    d = L.decide(_inp(ps5_on=True, ps5_raw="Diablo IV", ps5_enum=1))
+    assert d.subcontext == C.SUB_GAME_GRIND
+
+
+def test_ps5_disallowing_classification_applies_only_after_raw_title():
+    pending = L.decide(_inp(ps5_on=True, ps5_title="Returnal", ps5_raw="idle", ps5_enum=2))
+    classified = L.decide(_inp(ps5_on=True, ps5_raw="Returnal", ps5_enum=2))
+    assert pending.subcontext == C.SUB_GAME_GRIND
+    assert classified.subcontext == C.SUB_GAME_HEADSET
+
+
+def test_ps5_title_change_reclassifies_within_session():
+    first = L.decide(_inp(ps5_on=True, ps5_raw="Diablo IV", ps5_enum=1))
+    changed = L.decide(
+        _inp(ps5_on=True, ps5_raw="Returnal", ps5_enum=0),
+        sticky_gaming_sub=first.subcontext,
+    )
+    assert first.subcontext == C.SUB_GAME_GRIND
+    assert changed.subcontext == C.SUB_GAME_DEFAULT
+
+
+def test_stale_player_title_and_enum_do_not_steer_new_ps5_session():
+    d = L.decide(
+        _inp(ps5_on=True, ps5_title="Previous Game", ps5_raw="idle", ps5_enum=2),
+        sticky_gaming_sub=None,
+    )
+    assert d.subcontext == C.SUB_GAME_GRIND
 
 
 def test_switch_dock_is_gaming_default():

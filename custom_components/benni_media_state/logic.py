@@ -9,7 +9,7 @@ Abweichungen vom Toolbox-Original (verbindlich per Board):
 - B2-Gate FINAL: PC-Gaming ⇔ ETM-Raw-Titel vorhanden ∧ ≠ "No Game"
   (Titel-Ebene). Enum wählt NUR den Sound-Mode-Subcontext (0/1/2) —
   „Enum >= 1 als Gate" ist verworfen.
-- R6: PS5 an + Titel leer (Menü) → gaming_grind als Default. Titel leer
+- R6: PS5 an + Classifier-Titel leer (Menü/Pending) → gaming_grind als Default. Titel leer
   WÄHREND einer Session → letzter Subcontext sticky (Coordinator reicht ihn
   als `sticky_gaming_sub` herein).
 - FLEET-31: Quiet ist vom Szenario ENTKOPPELT — evaluate_quiet liefert nur
@@ -96,7 +96,7 @@ class Inputs:
     atv_app_id: Optional[str] = None
     # PS5
     ps5_on: bool = False
-    ps5_title: Optional[str] = None        # PSN-Now-Playing (Fallback zur ETM-Raw)
+    ps5_title: Optional[str] = None        # PSN/Player-Titel, nur Observability
     ps5_raw: Optional[str] = None          # ETM Raw-Title
     ps5_enum: int = 0
     # Switch
@@ -550,17 +550,17 @@ def detect_gaming(
 ) -> Optional[tuple[str, str, str, bool]]:
     """Return (subcontext, gaming_source, gaming_platform, headset_active) oder None.
 
-    - PS5: Gerät an ⇒ Gaming-Szenario (Geräte-Ebene). Titel/Enum verfeinern nur
-      den Subcontext. R6: kein Titel (Menü) → gaming_grind; lief schon eine
+    - PS5: Gerät an ⇒ Gaming-Szenario (Geräte-Ebene). Nur ein belastbarer
+      Classifier-Raw-Titel darf dessen Enum anwenden; ein unabhängiger
+      PSN-/Player-Titel ist keine Klassifikation. R6: kein Classifier-Titel
+      (Menü/Pending) → gaming_grind; lief schon eine
       Session (sticky_gaming_sub gesetzt) → letzten Subcontext halten.
     - Switch: gedockt ⇒ gaming_default (kein Titel-Signal).
     - PC: NUR über die Titel-Ebene — ETM-Raw vorhanden ∧ ≠ "No Game" (B2-Gate).
       pc_active (Plug) allein ist KEIN Gaming (das war der B2-Bug).
     """
     if inp.ps5_on or inp.foreground == DEV_PS5:
-        has_title = title_present(inp.ps5_raw) or bool(
-            inp.ps5_title and str(inp.ps5_title).strip()
-        )
+        has_title = title_present(inp.ps5_raw)
         if has_title:
             sub = _sub_from_enum(inp.ps5_enum)
         elif sticky_gaming_sub is not None:

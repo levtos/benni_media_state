@@ -183,7 +183,7 @@ ENUM_MEDIA_MUTE: Final = 2
 # PC-Gaming-Gate (nur Titel-Ebene) den Leerlauf-String als echten Titel und
 # löste fälschlich gaming:pc → entertainment_active → Bias Light aus (v2.11.0).
 NO_TITLE_VALUES: Final = frozenset(
-    {"", "no game", "idle", "unknown", "unavailable", "none"}
+    {"", "no game", "idle", "unknown", "unavailable", "none", "browsing the menu"}
 )
 
 # Apple-TV-System-Apps → Rollback aufs Pre-ATV-Szenario (Home, Settings, …).
@@ -242,7 +242,7 @@ CONF_APPLETV_MASTER: Final = "appletv_master_entity"
 # PS5
 CONF_PS5_PLAYER: Final = "ps5_player_entity"
 CONF_PS5_ACTIVE: Final = "ps5_active_entity"
-CONF_PS5_TITLE: Final = "ps5_title_entity"        # PSN-Now-Playing (Fallback)
+CONF_PS5_TITLE: Final = "ps5_title_entity"        # PSN-Now-Playing (Observability)
 CONF_PS5_RAW: Final = "ps5_raw_entity"            # ETM Raw-Title (B2-Gate)
 CONF_PS5_ENUM: Final = "ps5_enum_entity"          # ETM Enum (Sound-Mode)
 # Switch
