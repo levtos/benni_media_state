@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.7 — Ignore PS5 rest-mode downloads in screen arbitration
+
+- Confirmed TV off ends PS5 gaming and Apple TV streaming after the normal
+  debounce, even while the console remains electrically active or the players
+  still report playback. PS5 source grace and gaming holds clear on shutdown.
+- A recognized LG input takes precedence over background PS5 power. With
+  confirmed TV power and no recognized source, the PS5 player can still
+  confirm a session. Unknown TV power retains the existing fallbacks.
+- The media activity feed can return to idle or music so Core State, Light
+  Policy and Media Policy receive the current context.
+
 ## 0.14.6 — Current-session PS5 title classification
 
 - A PSN/media-player title no longer makes the independent Title Classifier enum

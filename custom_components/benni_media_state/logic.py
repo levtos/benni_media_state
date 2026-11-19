@@ -91,6 +91,7 @@ class Inputs:
     tv_power: Optional[bool] = None
     foreground: str | None = None
     streaming_confirmed: bool = False
+    tv_off: bool = False                  # confirmed off; unknown is not off
     # Apple TV
     atv_state: Optional[str] = None        # playing/paused/idle/off/standby
     atv_app_id: Optional[str] = None
@@ -512,16 +513,33 @@ def stabilize_tv_start(
     return now - started_at >= window_seconds, started_at
 
 
+def appletv_in_use(inp: Inputs) -> bool:
+    if inp.tv_off:
+        return False
+    return appletv_playing(inp.atv_state) or (
+        inp.atv_state in ("paused", "idle")
+        and inp.foreground == DEV_APPLETV
+        and inp.streaming_confirmed
+    )
+
+
+def ps5_foreground_allowed(tv_off: bool, foreground: str | None) -> bool:
+    return not tv_off and foreground in (None, DEV_PS5)
+
+
+def ps5_in_use(inp: Inputs) -> bool:
+    return ps5_foreground_allowed(inp.tv_off, inp.foreground) and (
+        inp.ps5_on or inp.foreground == DEV_PS5
+    )
+
+
 def detect_devices(inp: Inputs) -> list[str]:
     devs = []
-    if appletv_playing(inp.atv_state) or (
-        inp.atv_state in ("paused", "idle")
-        and inp.foreground == DEV_APPLETV and inp.streaming_confirmed
-    ):
+    if appletv_in_use(inp):
         devs.append(DEV_APPLETV)
-    if inp.ps5_on:
+    if ps5_in_use(inp):
         devs.append(DEV_PS5)
-    if inp.tv_active or inp.tv_power:
+    if not inp.tv_off and (inp.tv_active or inp.tv_power):
         devs.append(DEV_TV)
     if inp.switch_dock:
         devs.append(DEV_SWITCH)
@@ -550,7 +568,7 @@ def detect_gaming(
 ) -> Optional[tuple[str, str, str, bool]]:
     """Return (subcontext, gaming_source, gaming_platform, headset_active) oder None.
 
-    - PS5: Gerät an ⇒ Gaming-Szenario (Geräte-Ebene). Nur ein belastbarer
+    - PS5: gültige Nutzung ⇒ Gaming-Szenario. Nur ein belastbarer
       Classifier-Raw-Titel darf dessen Enum anwenden; ein unabhängiger
       PSN-/Player-Titel ist keine Klassifikation. R6: kein Classifier-Titel
       (Menü/Pending) → gaming_grind; lief schon eine
@@ -559,7 +577,7 @@ def detect_gaming(
     - PC: NUR über die Titel-Ebene — ETM-Raw vorhanden ∧ ≠ "No Game" (B2-Gate).
       pc_active (Plug) allein ist KEIN Gaming (das war der B2-Bug).
     """
-    if inp.ps5_on or inp.foreground == DEV_PS5:
+    if ps5_in_use(inp):
         has_title = title_present(inp.ps5_raw)
         if has_title:
             sub = _sub_from_enum(inp.ps5_enum)
@@ -621,11 +639,7 @@ def detect_streaming(inp: Inputs, app_map: dict[str, str]) -> Optional[str]:
     # Context truth is broader than playback truth: native idle/paused with a
     # valid Apple-TV session is still streaming context. G10 below keeps only
     # actual playing eligible to displace gaming_grind.
-    if not (appletv_playing(inp.atv_state) or (
-        inp.atv_state in ("paused", "idle")
-        and inp.foreground == DEV_APPLETV
-        and inp.streaming_confirmed
-    )):
+    if not appletv_in_use(inp):
         return None
     app = inp.atv_app_id
     if app is None:
@@ -639,7 +653,7 @@ def detect_streaming(inp: Inputs, app_map: dict[str, str]) -> Optional[str]:
 # TV (Broadcast)
 # --------------------------------------------------------------------------- #
 def detect_tv(inp: Inputs) -> Optional[str]:
-    if not (inp.tv_active or inp.tv_power):
+    if inp.tv_off or not (inp.tv_active or inp.tv_power):
         return None
     if inp.tv_source and inp.tv_source in TV_SOURCE_MAP:
         return TV_SOURCE_MAP[inp.tv_source]
@@ -719,7 +733,7 @@ def decide(
         reasons.append(f"manual_nudge:{inp.manual_nudge}")
 
     if d.context == CTX_IDLE:
-        # Apple-TV idle/paused may establish streaming context, but G10 keeps
+        # Apple-TV idle/paused may retain streaming context, but G10 keeps
         # actual playing as the only state that can displace gaming_grind.
         # Private Time was already handled above.
         g = detect_gaming(inp, sticky_gaming_sub)
@@ -760,8 +774,7 @@ def decide(
                 d.device = DEV_APPLETV
                 reasons.append(f"streaming:{inp.atv_app_id}")
             elif (
-                appletv_active(inp.atv_state)
-                and (appletv_playing(inp.atv_state) or (inp.foreground == DEV_APPLETV and inp.streaming_confirmed))
+                appletv_in_use(inp)
                 and inp.atv_app_id in APPLETV_SYSTEM_APPS
             ):
                 # System-App → Rollback aufs Pre-ATV-Szenario.
