@@ -72,6 +72,7 @@ from .const import (
     DEFAULT_PROFILE,
     DEV_APPLETV,
     DOMAIN,
+    GP_PC,
     GP_PS5,
     LEGACY_ENTITY_REPOINTS,
     PRIVATE_MANUAL_TIMEOUT_SECONDS,
@@ -248,15 +249,29 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._cancel_source_deadline()
             self._cancel_source_deadline = None
 
-    def _observe_foreground(self) -> None:
+    def _observe_foreground(self) -> bool | None:
         """Observe at event time so debounce never extends source-loss grace."""
         tv_state = self._raw_state(CONF_TV_PLAYER)
-        tv_off = tv_state in ("off", "standby")
-        master = _opt_bool(self._attr(CONF_TV_MASTER, "is_active"))
-        # A candidate or source attribute alone is not powered-on evidence.
-        tv_confirmed = master is True or tv_state in ("on", "playing", "paused")
-        source = self._attr(CONF_TV_PLAYER, "source") if tv_state not in (None, "unknown", "unavailable") else None
-        self._foreground.update(bool(tv_confirmed), tv_off, source, time.monotonic())
+        master_state = self._raw_state(CONF_TV_MASTER)
+        master_active = _opt_bool(self._attr(CONF_TV_MASTER, "is_active"))
+        tv_powered = None
+        if master_state in ("off", "standby"):
+            tv_powered = False
+        elif master_active is True or tv_state in ("on", "playing", "paused"):
+            # A confirmed master can bridge a short WebOS off at startup.
+            tv_powered = True
+        elif tv_state in ("off", "standby"):
+            tv_powered = False
+        source = (
+            self._attr(CONF_TV_PLAYER, "source")
+            if tv_state in ("on", "playing", "paused")
+            else None
+        )
+        self._foreground.update(tv_powered is True, tv_powered is False, source, time.monotonic())
+        if not logic.ps5_foreground_allowed(tv_powered is False, self._foreground.current):
+            self._ps5_on_since = None
+            self._sticky_gaming_sub = None
+        return tv_powered
 
     def _schedule_source_deadline(self) -> None:
         self._cancel_source_timer()
@@ -611,13 +626,14 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
-        self._observe_foreground()
+        tv_powered = self._observe_foreground()
+        tv_off = tv_powered is False
         # TV (FLEET-112): Aktiv-Wahrheit aus dem core_devices-Master; Quelle für
         # den Subcontext weiterhin aus dem Player-`source`-Attribut.
         tv_active_raw, tv_power = self._tv_active()
         # TV-Start: Master/Player/Watt liefern nur ein Roh-Signal; der TV-
         # Kontext wird erst nach dem stabilen 20-s-Fenster freigegeben.
-        tv_signal = tv_active_raw or tv_power is True
+        tv_signal = not tv_off and (tv_active_raw or tv_power is True)
         tv_active, self._tv_start_since = logic.stabilize_tv_start(
             tv_signal,
             self._tv_start_since,
@@ -630,10 +646,13 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Apple TV (FLEET-212): native LAN player is authoritative.
         atv_state, atv_app_id = self._atv()
 
-        # PS5: Plug-Active gewinnt, sonst Player-State.
+        # Bei bestätigtem TV-On zählen der LG-Eingang oder der PS5-Player.
+        # Ohne TV-Wahrheit bleibt der bisherige Master-Fallback verfügbar.
         ps5_player_state = self._state(CONF_PS5_PLAYER)
-        ps5_on_raw = self._activity(CONF_PS5_ACTIVE) or ps5_player_state in (
-            "on", "playing", "paused",
+        foreground = self._foreground.current
+        ps5_on_raw = logic.ps5_foreground_allowed(tv_off, foreground) and (
+            ps5_player_state in ("on", "playing", "paused")
+            or (tv_powered is None and self._activity(CONF_PS5_ACTIVE))
         )
         # OFF-Hold (FLEET-262): bricht ps5_on ein, während die Aktiv-Quelle
         # (Master) oder der Player degradiert ist (unknown/unavailable = flaky
@@ -665,7 +684,8 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             tv_active=tv_active,
             tv_source=self._attr(CONF_TV_PLAYER, "source"),
             tv_power=tv_power,
-            foreground=self._foreground.current,
+            foreground=foreground,
+            tv_off=tv_off,
             streaming_confirmed=(self.data or {}).get("context") == CTX_STREAMING,
             atv_state=atv_state,
             atv_app_id=atv_app_id,
@@ -750,7 +770,7 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data["source_arbitration"] = {
             **self._foreground.diagnostics(time.monotonic()),
             "selected_source": state.device,
-            "conflict": bool(inputs.atv_state in ("playing", "paused", "idle") and (inputs.ps5_on or inputs.foreground == GP_PS5)),
+            "conflict": logic.appletv_active(inputs.atv_state) and logic.ps5_in_use(inputs),
         }
         data["active_reasons"].append(self._foreground.reason)
         self._schedule_source_deadline()
@@ -774,13 +794,13 @@ class MediaStateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             activity_attrs["title"] = now_playing["title"]
         if now_playing.get("artist"):
             activity_attrs["artist"] = now_playing["artist"]
-        if state.context == CTX_GAMING:
+        if state.gaming_platform == GP_PS5:
             if logic.title_present(inputs.ps5_raw):
                 activity_attrs["game_title"] = inputs.ps5_raw
             elif inputs.ps5_title and str(inputs.ps5_title).strip():
                 activity_attrs["game_title"] = inputs.ps5_title
-            elif logic.title_present(inputs.pc_raw):
-                activity_attrs["game_title"] = inputs.pc_raw
+        elif state.gaming_platform == GP_PC and logic.title_present(inputs.pc_raw):
+            activity_attrs["game_title"] = inputs.pc_raw
         if state.context == CTX_STREAMING and inputs.atv_app_id:
             activity_attrs["source_app"] = inputs.atv_app_id
         data["activity_context"] = ac.state

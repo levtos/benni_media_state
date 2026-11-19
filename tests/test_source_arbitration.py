@@ -98,6 +98,22 @@ def test_private_and_away_still_beat_foreground():
     assert L.decide(L.Inputs(**source, away_gated=True)).context == C.CTX_IDLE
 
 
+def test_tv_off_rejects_stale_foreground_and_system_app_rollback():
+    inputs = L.Inputs(
+        tv_off=True, tv_active=True, tv_power=True, foreground=C.DEV_PS5,
+        ps5_on=True, atv_state="playing", atv_app_id="com.apple.TVSettings",
+        pc_active=True,
+    )
+    state = L.decide(
+        inputs, pre_atv=(C.CTX_GAMING, C.SUB_GAME_DEFAULT),
+        sticky_gaming_sub=C.SUB_GAME_HEADSET,
+    )
+    assert (state.context, state.device, state.gaming_platform) == (
+        C.CTX_IDLE, C.DEV_PC, C.GP_NONE,
+    )
+    assert state.entertainment_active is False
+
+
 def test_lg_foreground_does_not_rewrite_pc_headset_priority():
     state = L.decide(L.Inputs(pc_active=True, pc_raw="game", pc_enum=2, atv_state="playing", foreground=C.DEV_APPLETV))
     assert state.context == C.CTX_GAMING

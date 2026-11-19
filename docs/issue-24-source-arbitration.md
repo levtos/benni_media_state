@@ -33,6 +33,23 @@ Bindings continue to resolve options, then data, then profile prefill. The
 existing LAN prefill is not a migration and does not override a saved native
 binding. No change is based on the superseded frozen-player claim in #15.
 
+### TV power and PS5 rest mode (0.14.7)
+
+- A TV Master reporting `off` or `standby` ends PS5 and Apple TV use after
+  the normal debounce. Without a confirmed active Master, a definite LG-player
+  off also closes those paths. A transient LG-player off while the Master
+  is still active uses the existing LG source grace.
+- Shutdown clears the PS5 dropout timer and sticky subcontext. The last LG
+  foreground remains visible for diagnostics and cannot reactivate a session.
+  The device matrix can still show that the PS5 is electrically active.
+- With confirmed TV power, a recognized LG input selects whether PS5 can be
+  the foreground. If LG provides no recognized input, a live PS5 player is
+  required to start gaming. Unknown/unavailable TV power retains the previous
+  PS5 Master and native-player fallbacks.
+- PC activity and the existing B2 PC-title gate remain independent of TV
+  power. The raw device contracts, watt thresholds and downstream policies
+  retain their existing roles.
+
 Tests cover the pure decisions and actual coordinator callbacks with fake HA
 states and a deterministic clock. Production bindings and acoustic behavior
 remain Benni's Live gate. No HA reload, installation or device action occurs.
